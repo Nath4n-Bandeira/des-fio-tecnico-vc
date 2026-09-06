@@ -1,19 +1,29 @@
-# Solução - Análise de Tendências de Vendas no Varejo
+# E um aviso
+este repositório esta publico por obrigatoriedade do teste, os dados necessários para rodar esse script são privados. e não se encontram neste repositório
 
-## Aviso Sobre Os Dados
+#  Analise de Tendencias de Vendas solução apresentada
 
-Este repositório está público por obrigatoriedade do teste. Os datasets de desafio são privados e não devem ser versionados. Por isso, apenas o arquivo `data/sample/sales_small.dat` fica no repositório; os arquivos de `data/challenge/` devem ser baixados ou gerados localmente conforme o enunciado.
+Este documento segue de acordo o README da proposta e resume o que foi produzido em `main.go`, com blocos de validacao para conferir cada parte do desafio.
 
-## O Que A Solução Faz
+## O que o `main.go` faz
 
-O programa, escrito em Go, lê arquivos `.dat` de largura fixa e encontra os 20 produtos com maior crescimento entre:
+A solucao le arquivos de vendas em largura fixa, ignora o cabecalho ate a linha `-------`, acumula as quantidades por produto em dois periodos e gera o Top 20 por crescimento absoluto.
 
-- período anterior: janeiro de 2024;
-- período atual: fevereiro de 2024.
+Periodos considerados:
 
-Para cada produto, ele soma a quantidade vendida em cada período, calcula o crescimento absoluto e percentual, ordena o resultado e grava uma tabela em Markdown dentro de `results/`.
+- Periodo anterior: janeiro de 2024
+- Periodo atual: fevereiro de 2024
 
-## Como Executar
+Arquivos suportados por flag:
+
+```text
+small       -> data/sample/sales_small.dat
+medium      -> data/challenge/sales_medium.dat
+large       -> data/challenge/sales_large.dat
+extra-large -> data/challenge/sales_extra_large.dat
+```
+
+Uso basico:
 
 ```powershell
 go run . -size small
@@ -21,74 +31,131 @@ go run . -size medium
 go run . -size large
 go run . -size extra-large
 ```
-
-Também é possível limitar o número de núcleos lógicos usados pelo Go:
+você também pode especificar o numero de nucleos que a cpu utilaza usando -cpus 'numero de cpus'
 
 ```powershell
-go run . -size small -cpus 12
+go run . -size small -cpus -12
+go run . -size medium -cpus -12
+go run . -size large -cpus-12
+go run . -size extra-large -21
 ```
 
-Para processar todos os datasets em sequência:
+Para processar todos:
 
 ```powershell
 go run . -all
 ```
 
-O comando `-all` exige que todos os arquivos `.dat` estejam presentes localmente.
+O programa tambem grava o resultado em Markdown dentro de `results/`, seguindo o modelo de `results/result-sample.md` que foi disponibilizado no repositório do desafio
+caso quem estiver testando o código, existe 2 linhas comentadas que reportam tanto no console quanto no arquivo salvo o numero de linhas que foram percorridas
 
-## Como O `.dat` É Tratado
+### Arquivos de CPU por sistema operacional
 
-O arquivo é lido sequencialmente com `bufio.Reader`. Primeiro, o programa ignora o cabeçalho até encontrar a linha `-------`. Depois disso, cada linha é tratada como uma venda.
+O projeto separa a medicao de CPU em dois arquivos porque o Go permite escolher arquivos diferentes conforme o sistema operacional usando build tags.
 
-Como o layout é de largura fixa, o programa acessa os campos diretamente pelas posições dos bytes, sem usar split ou parser de CSV:
+`cpu_windows.go` tem a tag `//go:build windows`, entao so entra na compilacao quando o programa roda no Windows. Ele usa `syscall.GetProcessTimes` para ler o tempo de CPU consumido pelo processo atual, somando tempo de kernel e tempo de usuario. O `main.go` compara essa medicao antes e depois do processamento para calcular o percentual de CPU exibido nos resultados.
 
-- `product_id`: usado para identificar o produto;
-- `timestamp`: usado para separar janeiro e fevereiro de 2024;
-- `quantity`: usado para acumular a quantidade vendida.
+`cpu_other.go` tem a tag `//go:build !windows`, entao entra na compilacao em sistemas que nao sejam Windows. Nesse caso a funcao existe apenas para manter o mesmo contrato do codigo, mas retorna `0, false`, indicando que a medicao automatica de CPU nao foi feita naquele sistema.
 
-Campos como loja e preço unitário são ignorados porque não entram no cálculo pedido.
+## Estrategia
 
-## Estratégia
+Em vez de carregar todas as linhas em memoria, o programa faz leitura sequencial com `bufio.Reader` e um buffer maior (`16 MB`). Para cada linha, ele extrai apenas os campos necessarios:
 
-As quantidades são acumuladas em um slice indexado pelo número do produto, o que evita guardar todas as vendas em memória e reduz o custo de busca durante a leitura.
+### Como o arquivo `.dat` e tratado
 
-Depois da leitura, o programa:
+O arquivo `.dat` e lido como um arquivo de largura fixa. Primeiro o programa ignora o cabecalho ate encontrar a linha separadora `-------`; a partir dali, cada linha passa a representar uma venda.
 
-1. descarta produtos sem vendas no período anterior;
-2. calcula `growth = current - previous`;
-3. calcula o percentual de crescimento;
-4. arredonda o percentual para cima com duas casas decimais;
-5. ordena por maior crescimento, maior percentual em empate e `product_id` crescente no empate final;
-6. grava o Top 20.
+Como os campos sempre ocupam as mesmas posicoes, o programa nao precisa quebrar a linha por delimitadores. Ele acessa diretamente os bytes onde ficam `product_id`, `timestamp` e `quantity`. Por exemplo, o produto e lido nas posicoes do identificador `PR00000`, a quantidade fica nas posicoes `[45:47]`, e o mes do `timestamp` e verificado para decidir se a venda pertence a janeiro ou fevereiro de 2024.
 
-## Métricas
+Durante essa leitura, o programa acumula apenas as quantidades por produto:
 
-Cada execução imprime e grava:
+- vendas de janeiro entram em `previous`;
+- vendas de fevereiro entram em `current`;
+- os outros campos, como loja e preco unitario, sao ignorados porque nao entram no calculo pedido.
 
-- CPU;
-- RAM;
-- tempo decorrido.
+Esse tratamento evita guardar todas as vendas em memoria. No fim da leitura, o programa percorre os totais acumulados por produto, calcula crescimento absoluto e percentual, ordena os resultados e grava o Top 20.
 
-No Windows, `cpu_windows.go` usa `syscall.GetProcessTimes` para medir o tempo de CPU do processo. Em outros sistemas, `cpu_other.go` mantém o mesmo contrato de código e informa quando a medição automática de CPU não está disponível.
+```go
+product := parseProductNumber(line)
+quantity := parseQuantity(line)
 
-## Resultados
+switch {
+case isJanuary2024(line):
+	quantities[product].previous += quantity
+case isFebruary2024(line):
+	quantities[product].current += quantity
+}
+```
 
-Os arquivos de saída seguem o modelo de `results/result-sample.md`:
+O acumulador principal e um slice indexado pelo numero do produto:
+
+```go
+quantities := make([]totals, productLimit)
+```
+
+Isso evita mapas grandes no caminho quente da leitura e deixa a solucao previsivel para o arquivo `extra-large`.
+
+## Regras de negocio implementadas
+
+Produtos sem quantidade no periodo anterior sao descartados:
+
+```go
+if product == 0 || total.previous == 0 {
+	continue
+}
+```
+
+Crescimento absoluto e percentual:
+
+```go
+growth := total.current - total.previous
+percent := ceilTwoDecimals((float64(growth) / float64(total.previous)) * 100)
+```
+
+Arredondamento para cima com duas casas:
+
+```go
+func ceilTwoDecimals(value float64) float64 {
+	return math.Ceil(value*100) / 100
+}
+```
+
+Ordenacao deterministica:
+
+```go
+sort.Slice(results, func(i, j int) bool {
+	if results[i].growth != results[j].growth {
+		return results[i].growth > results[j].growth
+	}
+	if results[i].percent != results[j].percent {
+		return results[i].percent > results[j].percent
+	}
+	return results[i].productID < results[j].productID
+})
+```
+
+Formato do produto na saida:
+
+```go
+func formatProductID(product int) string {
+	return fmt.Sprintf("produto%02d", product)
+}
+```
+
+## Metricas
+
+Ao final de cada execucao, o programa imprime e grava:
 
 ```text
-results/
-  small.md
-  medium.md
-  large.md
-  extra_large.md
+CPU
+RAM
+Tempo decorrido
 ```
 
-## Validação
+Esses valores tambem sao escritos no Markdown de saida:
 
-```powershell
-go test ./...
+```go
+fmt.Fprintf(writer, "| CPU | %s |\n", formatCPU(m))
+fmt.Fprintf(writer, "| RAM | %s |\n", formatBytes(m.memoryBytes))
+fmt.Fprintf(writer, "| Tempo decorrido | %s |\n", formatDuration(m.elapsed))
 ```
-
-Os testes cobrem cálculo, descarte de produto sem período anterior, produto descontinuado, arredondamento e ordenação.
-
-Mais detalhes da implementação estão em `README_SOLUCAO.md`.
