@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+venv/
+.venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Ambiente / editor
+.idea/
+.vscode/
+.DS_Store
+
+# Datasets de desafio (gerar com o script ou baixar)
+data/challenge/sales_medium.dat
+data/challenge/sales_large.dat
+data/challenge/sales_extra_large.dat
