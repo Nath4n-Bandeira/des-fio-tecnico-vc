@@ -1,140 +1,147 @@
-# Análise de Tendências de Vendas no Varejo
+#  Analise de Tendencias de Vendas solução apresentada
 
-## Contexto
+Este documento complementa o README da proposta e resume o que foi produzido em `main.go`, com blocos de validacao para conferir cada parte do desafio.
 
-A **Varejo Consolidado** opera uma rede de lojas em diferentes regiões. Cada venda é registrada e enviada para um data warehouse central. A equipe de inteligência comercial precisa identificar, entre milhares de produtos, quais mais cresceram ao comparar dois períodos consecutivos.
+## O que o `main.go` faz
 
-Essa análise orienta reposição de estoque, campanhas e negociação com fornecedores. O volume de vendas é grande e continua crescendo — a solução precisa ser correta com poucos registros e continuar viável com dezenas de milhões.
+A solucao le arquivos de vendas em largura fixa, ignora o cabecalho ate a linha `-------`, acumula as quantidades por produto em dois periodos e gera o Top 20 por crescimento absoluto.
 
-## Problema
+Periodos considerados:
 
-A partir de um arquivo de vendas, encontre os **20 produtos** que mais cresceram entre o período **anterior** (janeiro de 2024) e o período **atual** (fevereiro de 2024).
+- Periodo anterior: janeiro de 2024
+- Periodo atual: fevereiro de 2024
 
-Linguagem livre. O problema — entrada, regras e saída — precisa ser compatível com qualquer linguagem escolhida.
+Arquivos suportados por flag:
 
-## Entrada
-
-Arquivo de largura fixa. O cabeçalho lista cada campo como `nome:início,tamanho`. Depois da linha `-------` começam os registros — um por linha, sem delimitador. IDs têm sempre o mesmo tamanho em todos os datasets.
-
-```
-sale_id:0,11
-store_id:11,7
-product_id:18,7
-timestamp:25,20
-quantity:45,2
-unit_price:47,7
--------
-S0000000090ST00010PR000022024-01-23T16:45:22Z06   8.58
-S0000000091ST00003PR000012024-02-01T00:00:00Z12  12.87
+```text
+small       -> data/sample/sales_small.dat
+medium      -> data/challenge/sales_medium.dat
+large       -> data/challenge/sales_large.dat
+extra-large -> data/challenge/sales_extra_large.dat
 ```
 
-| Campo | Tipo | Slice | Descrição |
-|---|---|---|---|
-| `sale_id` | string | `[0:11]` | `S` + 10 dígitos. Identificador único da venda. |
-| `store_id` | string | `[11:18]` | `ST` + 5 dígitos. Identificador da loja. Não entra no cálculo. |
-| `product_id` | string | `[18:25]` | `PR` + 5 dígitos. Identificador do produto. |
-| `timestamp` | string | `[25:45]` | Data e hora em UTC, ISO 8601 (`YYYY-MM-DDTHH:MM:SSZ`). |
-| `quantity` | int | `[45:47]` | Quantidade vendida, sempre `>= 1`. |
-| `unit_price` | float | `[47:54]` | Preço unitário, sempre `> 0`. Não entra no cálculo. |
+Uso basico:
 
-**Períodos.** Instante de corte: `2024-02-01T00:00:00Z`.
-
-- **Anterior:** `[2024-01-01T00:00:00Z, 2024-02-01T00:00:00Z)`
-- **Atual:** `[2024-02-01T00:00:00Z, 2024-03-01T00:00:00Z)`
-
-Fevereiro de 2024 inclui o dia 29. Os dados são sempre válidos.
-
-## Saída
-
-Imprima no console, em português, uma tabela com os 20 produtos: Produto, Qtd. Período Anterior, Qtd. Período Atual, Crescimento e Crescimento (%).
-
-Só entram produtos com quantidade **maior que zero** no período anterior. Produto sem venda em janeiro fica de fora (não há base de comparação).
-
-Exemplo:
-
-```
-Produto      Qtd. Período Anterior   Qtd. Período Atual   Crescimento   Crescimento (%)
-produto01    80                      320                  240           300.00%
-produto02    110                     340                  230           209.09%
+```powershell
+go run . -size small
+go run . -size medium
+go run . -size large
+go run . -size extra-large
 ```
 
-Salve o mesmo resultado em markdown, um arquivo por dataset — veja a árvore do projeto em Entrega. O formato esperado está em `results/result-sample.md`.
+Para processar todos:
 
-## Regras de negócio
-
-### Cálculo
-
-```
-growth = current_period_quantity - previous_period_quantity
-growth_percentage = (growth / previous_period_quantity) * 100
+```powershell
+go run . -all
 ```
 
-Arredonde `growth_percentage` para cima, com duas casas decimais.
+O programa tambem grava o resultado em Markdown dentro de `results/`, seguindo o modelo de `results/result-sample.md` que foi disponibilizado no repositório do desafio
 
-### Casos especiais
+## Estrategia
 
-1. **Sem quantidade no período anterior** (`previous == 0`): o produto **não entra** no resultado — inclusive produto novo, vendido só em fevereiro.
-2. **Produto descontinuado** (`previous > 0` e `current == 0`): `growth = -previous_period_quantity`; `growth_percentage = -100.0`.
-3. **Sem vendas nos dois períodos**: produto não aparece no resultado.
-4. Os dados de entrada são sempre válidos.
+Em vez de carregar todas as linhas em memoria, o programa faz leitura sequencial com `bufio.Reader` e um buffer maior (`16 MB`). Para cada linha, ele extrai apenas os campos necessarios:
 
-### Ordenação determinística
+```go
+product := parseProductNumber(line)
+quantity := parseQuantity(line)
 
-1. Maior `growth` primeiro.
-2. Empate em `growth` → maior `growth_percentage` primeiro.
-3. Empate persistente → `product_id` em ordem crescente.
-
-## Dataset
-
-```
-data/
-  sample/
-    sales_small.dat
-  challenge/
-    sales_medium.dat
-    sales_large.dat
-    sales_extra_large.dat
+switch {
+case isJanuary2024(line):
+	quantities[product].previous += quantity
+case isFebruary2024(line):
+	quantities[product].current += quantity
+}
 ```
 
-| Dataset | Lojas | Produtos | Linhas (aprox.) | Tamanho (aprox.) | Uso |
-|---|---|---|---|---|---|
-| `small` | 5 | 30 | ~36 mil | ~2 MB | Desenvolvimento |
-| `medium` | 50 | 500 | ~360 mil | ~20 MB | Validação |
-| `large` | 500 | 5.000 | ~3,6 milhões | ~200 MB | Escalabilidade |
-| `extra-large` | 5.000 | 20.000 | ~36 milhões | ~2 GB | Escalabilidade |
+O acumulador principal e um slice indexado pelo numero do produto:
 
-Somente `small` está no repositório. Para `medium`, `large` e `extra-large`:
-
-1. **Download:** [pasta compartilhada](https://varejoconsolidado868-my.sharepoint.com/:f:/g/personal/kaua_rob_varejoconsolidado_com_br/IgCR4yjTPNo0T7neKygGNJgCAZVQh_w3TfGsM_DR_cVh3f8?e=uSEwJ7) — a senha será enviada ao candidato por e-mail, junto com o teste.
-2. **Geração local:** `python scripts/generate_dataset.py --size <tamanho>` (determinístico, seed `20240101`).
-
-## Performance
-
-Meça e reporte, para cada dataset: **uso de CPU**, **uso de memória (RAM)** e **tempo decorrido total**. Performance é critério de avaliação — inclua esses três números em `results/[size].md`.
-
-## Entrega
-
-Repositório GitHub público, estruturado assim:
-
-```
-projeto/
-├── README.md
-├── (seu código-fonte)
-└── results/
-    ├── small.md
-    ├── medium.md
-    ├── large.md
-    └── extra_large.md
+```go
+quantities := make([]totals, productLimit)
 ```
 
-- **README.md** — explique sua solução.
-- **results/[size].md** — tabela dos 20 produtos daquele dataset + CPU, RAM e tempo decorrido. Use `results/result-sample.md` como modelo.
+Isso evita mapas grandes no caminho quente da leitura e deixa a solucao previsivel para o arquivo `extra-large`.
 
-## Avaliação
+## Regras de negocio implementadas
 
-1. **Correção** — regras de negócio, casos especiais, saída no formato pedido.
-2. **Performance** — CPU, RAM e tempo decorrido nos quatro datasets.
-3. **Escalabilidade** — funciona nos quatro datasets.
-4. **Clareza** do código.
-5. **Robustez** — casos especiais tratados corretamente.
-6. **Entrega** — repositório, README, resultados documentados.# des-fio-tecnico-vc
+Produtos sem quantidade no periodo anterior sao descartados:
+
+```go
+if product == 0 || total.previous == 0 {
+	continue
+}
+```
+
+Crescimento absoluto e percentual:
+
+```go
+growth := total.current - total.previous
+percent := ceilTwoDecimals((float64(growth) / float64(total.previous)) * 100)
+```
+
+Arredondamento para cima com duas casas:
+
+```go
+func ceilTwoDecimals(value float64) float64 {
+	return math.Ceil(value*100) / 100
+}
+```
+
+Ordenacao deterministica:
+
+```go
+sort.Slice(results, func(i, j int) bool {
+	if results[i].growth != results[j].growth {
+		return results[i].growth > results[j].growth
+	}
+	if results[i].percent != results[j].percent {
+		return results[i].percent > results[j].percent
+	}
+	return results[i].productID < results[j].productID
+})
+```
+
+Formato do produto na saida:
+
+```go
+func formatProductID(product int) string {
+	return fmt.Sprintf("produto%02d", product)
+}
+```
+
+## Metricas
+
+Ao final de cada execucao, o programa imprime e grava:
+
+```text
+CPU
+RAM
+Tempo decorrido
+```
+
+Esses valores tambem sao escritos no Markdown de saida:
+
+```go
+fmt.Fprintf(writer, "| CPU | %s |\n", formatCPU(m))
+fmt.Fprintf(writer, "| RAM | %s |\n", formatBytes(m.memoryBytes))
+fmt.Fprintf(writer, "| Tempo decorrido | %s |\n", formatDuration(m.elapsed))
+```
+
+## Resultado esperado da entrega
+
+Estrutura principal:
+
+```text
+.
+|-- README.md
+|-- README_SOLUCAO.md
+|-- main.go
+|-- go.mod
+|-- cpu_other.go
+|-- cpu_windows.go
+|-- data/
+`-- results/
+    |-- small.md
+    |-- medium.md
+    |-- large.md
+    `-- extra_large.md
+```
