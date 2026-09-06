@@ -1,6 +1,9 @@
+# E um aviso
+este repositório esta publico por obrigatoriedade do teste, os dados necessários para rodar esse script são privados. e não se encontram neste repositório
+
 #  Analise de Tendencias de Vendas solução apresentada
 
-Este documento complementa o README da proposta e resume o que foi produzido em `main.go`, com blocos de validacao para conferir cada parte do desafio.
+Este documento segue de acordo o README da proposta e resume o que foi produzido em `main.go`, com blocos de validacao para conferir cada parte do desafio.
 
 ## O que o `main.go` faz
 
@@ -28,6 +31,14 @@ go run . -size medium
 go run . -size large
 go run . -size extra-large
 ```
+você também pode especificar o numero de nucleos que a cpu utilaza usando -cpus 'numero de cpus'
+
+```powershell
+go run . -size small -cpus -12
+go run . -size medium -cpus -12
+go run . -size large -cpus-12
+go run . -size extra-large -21
+```
 
 Para processar todos:
 
@@ -36,6 +47,15 @@ go run . -all
 ```
 
 O programa tambem grava o resultado em Markdown dentro de `results/`, seguindo o modelo de `results/result-sample.md` que foi disponibilizado no repositório do desafio
+caso quem estiver testando o código, existe 2 linhas comentadas que reportam tanto no console quanto no arquivo salvo o numero de linhas que foram percorridas
+
+### Arquivos de CPU por sistema operacional
+
+O projeto separa a medicao de CPU em dois arquivos porque o Go permite escolher arquivos diferentes conforme o sistema operacional usando build tags.
+
+`cpu_windows.go` tem a tag `//go:build windows`, entao so entra na compilacao quando o programa roda no Windows. Ele usa `syscall.GetProcessTimes` para ler o tempo de CPU consumido pelo processo atual, somando tempo de kernel e tempo de usuario. O `main.go` compara essa medicao antes e depois do processamento para calcular o percentual de CPU exibido nos resultados.
+
+`cpu_other.go` tem a tag `//go:build !windows`, entao entra na compilacao em sistemas que nao sejam Windows. Nesse caso a funcao existe apenas para manter o mesmo contrato do codigo, mas retorna `0, false`, indicando que a medicao automatica de CPU nao foi feita naquele sistema.
 
 ## Estrategia
 
@@ -126,22 +146,3 @@ fmt.Fprintf(writer, "| RAM | %s |\n", formatBytes(m.memoryBytes))
 fmt.Fprintf(writer, "| Tempo decorrido | %s |\n", formatDuration(m.elapsed))
 ```
 
-## Resultado esperado da entrega
-
-Estrutura principal:
-
-```text
-.
-|-- README.md
-|-- README_SOLUCAO.md
-|-- main.go
-|-- go.mod
-|-- cpu_other.go
-|-- cpu_windows.go
-|-- data/
-`-- results/
-    |-- small.md
-    |-- medium.md
-    |-- large.md
-    `-- extra_large.md
-```
