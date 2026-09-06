@@ -61,6 +61,20 @@ O projeto separa a medicao de CPU em dois arquivos porque o Go permite escolher 
 
 Em vez de carregar todas as linhas em memoria, o programa faz leitura sequencial com `bufio.Reader` e um buffer maior (`16 MB`). Para cada linha, ele extrai apenas os campos necessarios:
 
+### Como o arquivo `.dat` e tratado
+
+O arquivo `.dat` e lido como um arquivo de largura fixa. Primeiro o programa ignora o cabecalho ate encontrar a linha separadora `-------`; a partir dali, cada linha passa a representar uma venda.
+
+Como os campos sempre ocupam as mesmas posicoes, o programa nao precisa quebrar a linha por delimitadores. Ele acessa diretamente os bytes onde ficam `product_id`, `timestamp` e `quantity`. Por exemplo, o produto e lido nas posicoes do identificador `PR00000`, a quantidade fica nas posicoes `[45:47]`, e o mes do `timestamp` e verificado para decidir se a venda pertence a janeiro ou fevereiro de 2024.
+
+Durante essa leitura, o programa acumula apenas as quantidades por produto:
+
+- vendas de janeiro entram em `previous`;
+- vendas de fevereiro entram em `current`;
+- os outros campos, como loja e preco unitario, sao ignorados porque nao entram no calculo pedido.
+
+Esse tratamento evita guardar todas as vendas em memoria. No fim da leitura, o programa percorre os totais acumulados por produto, calcula crescimento absoluto e percentual, ordena os resultados e grava o Top 20.
+
 ```go
 product := parseProductNumber(line)
 quantity := parseQuantity(line)
@@ -145,4 +159,3 @@ fmt.Fprintf(writer, "| CPU | %s |\n", formatCPU(m))
 fmt.Fprintf(writer, "| RAM | %s |\n", formatBytes(m.memoryBytes))
 fmt.Fprintf(writer, "| Tempo decorrido | %s |\n", formatDuration(m.elapsed))
 ```
-
